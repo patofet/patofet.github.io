@@ -357,14 +357,16 @@
 
                     } catch (err) {
                         // Ignoramos errores puntuales en una expansión para seguir con la siguiente candidata
+                        log(err, "error");
                     }
                 }
 
                 // Añadir a la tabla solo la GANADORA de ese juego
-                log(`bestExpansion of ${game.name} is name: ${bestExpansion.name}, supply: ${bestExpansion.supply}, unique: ${bestExpansion.unique}`, "info");  
                 if (bestExpansion) {
+                    log(`bestExpansion of ${game.name} is name: ${bestExpansion.name}, supply: ${bestExpansion.supply}, unique: ${bestExpansion.unique}`, "info");
                     addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique);
                 } else {
+                    log(`No bestExpansion for game ${game.name}`, "info");
                     addTableRow(game.name, "Sin datos / Error", 0, 0, true);
                 }
             }
