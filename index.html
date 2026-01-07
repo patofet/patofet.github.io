@@ -258,6 +258,7 @@
     }
 
     // Lógica Principal
+    // Lógica Principal
     async function startAnalysis() {
         const token = els.token.value.trim();
         const useProxy = els.proxy.checked;
@@ -275,19 +276,25 @@
         log("Iniciando análisis...", "info");
 
         try {
-            // 1. OBTENER JUEGOS [cite: 54]
+            [cite_start]// 1. OBTENER JUEGOS [cite: 54]
             log("Obteniendo lista de juegos...", "info");
-            const games = (await fetchAPI('/games', token, useProxy)).array;
+            const gamesResponse = await fetchAPI('/games', token, useProxy);
+            
+            // SEGURIDAD: Usamos .array si existe (tu corrección), si no, usamos la respuesta directa
+            // por si la API o el Proxy cambian de comportamiento.
+            const games = gamesResponse.array || gamesResponse; 
+            
+            if (!Array.isArray(games)) {
+                throw new Error("La respuesta de /games no es una lista válida.");
+            }
+
             log(`Se encontraron ${games.length} juegos.`, "success");
 
-            // 2. OBTENER TODAS LAS EXPANSIONES [cite: 97]
-            // Nota: La API no documenta un filtro de expansiones por game_id en el endpoint principal,
-            // por lo que descargamos la lista (puede ser pesada) y filtramos en cliente para asegurar precisión.
+            [cite_start]// 2. OBTENER TODAS LAS EXPANSIONES [cite: 97]
             log("Descargando base de datos de expansiones (esto puede tardar)...", "info");
             const allExpansions = await fetchAPI('/expansions', token, useProxy);
             log(`Descargadas ${allExpansions.length} expansiones. Procesando...`, "success");
 
-            // Agrupar expansiones por juego para acceso rápido
             const expansionsByGame = {};
             allExpansions.forEach(exp => {
                 if (!expansionsByGame[exp.game_id]) expansionsByGame[exp.game_id] = [];
@@ -299,59 +306,66 @@
             const totalToProcess = games.length;
 
             for (const game of games) {
-                // Actualizar UI
                 processedCount++;
                 els.progress.value = (processedCount / totalToProcess) * 100;
 
                 const gameExpansions = expansionsByGame[game.id] || [];
                 
                 if (gameExpansions.length === 0) {
-                    log(`Saltando ${game.name}: Sin expansiones.`, "warn");
-                    continue;
+                    continue; // Saltamos silenciosamente si no hay expansiones para no ensuciar el log
                 }
 
-                // "Regla del Hype": Ordenar por ID descendente (asumiendo ID mayor = más nuevo)
-                // [cite: 106] El objeto Expansion tiene un ID numérico.
+                // Ordenar por ID descendente (más nuevo primero)
                 gameExpansions.sort((a, b) => b.id - a.id);
 
-                // Seleccionar la N-ésima expansión
-                // Si piden la 3ra y solo hay 2, cogemos la última disponible (la más antigua de las nuevas).
-                const selectedIndex = Math.min(nRule - 1, gameExpansions.length - 1);
-                const targetExpansion = gameExpansions[selectedIndex];
-
-                log(`Analizando ${game.name} -> Expansión: ${targetExpansion.name} (ID: ${targetExpansion.id})...`, "info");
-
-                // 4. MUESTREO DE MERCADO [cite: 186]
-                // Endpoint: GET /marketplace/products?expansion_id=...
-                // Rate Limit: 10 requests per second 
+                // --- LÓGICA DE "MEJOR CANDIDATO" ---
+                // Cogemos las N últimas expansiones (ej: las 3 últimas)
+                const candidates = gameExpansions.slice(0, nRule);
                 
-                try {
-                    await sleep(250); // Pausa de seguridad para respetar rate limits (4 req/s aprox)
+                log(`Analizando ${game.name}: Comparando sus últimas ${candidates.length} expansiones...`, "info");
 
-                    const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${targetExpansion.id}`, token, useProxy);
-                    
-                    // Calcular "Salud" (Supply Depth)
-                    //  La respuesta es un Objeto: { "blueprint_id": [Array de Productos...], ... }
-                    //  Cada producto tiene una propiedad "quantity".
-                    
-                    let totalSupply = 0;
-                    let uniqueBlueprints = 0;
+                let bestExpansion = null;
+                let maxSupply = -1;
 
-                    // Iterar sobre los keys (Blueprints)
-                    Object.values(productsMap).forEach(productList => {
-                        uniqueBlueprints++;
-                        // Iterar sobre los productos listados para ese blueprint (top 25 cheapest)
-                        productList.forEach(product => {
-                            totalSupply += (product.quantity || 0);
+                // Revisamos CADA UNA de las candidatas para encontrar la mejor
+                for (const exp of candidates) {
+                    try {
+                        [cite_start]// Respetar Rate Limits [cite: 198]
+                        await sleep(250); 
+
+                        const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${exp.id}`, token, useProxy);
+                        
+                        let currentSupply = 0;
+                        let uniqueBlueprints = 0;
+
+                        Object.values(productsMap).forEach(productList => {
+                            uniqueBlueprints++;
+                            productList.forEach(product => {
+                                totalSupply += (product.quantity || 0); // Corrección: variable local
+                                currentSupply += (product.quantity || 0);
+                            });
                         });
-                    });
 
-                    // Añadir a la tabla
-                    addTableRow(game.name, targetExpansion.name, totalSupply, uniqueBlueprints);
+                        // Si esta expansión tiene más mercado que la anterior, es la nueva ganadora
+                        if (currentSupply > maxSupply) {
+                            maxSupply = currentSupply;
+                            bestExpansion = {
+                                name: exp.name,
+                                supply: currentSupply,
+                                unique: uniqueBlueprints
+                            };
+                        }
 
-                } catch (marketError) {
-                    log(`Error obteniendo mercado para ${game.name}: ${marketError.message}`, "error");
-                    addTableRow(game.name, targetExpansion.name, "Error", 0, true);
+                    } catch (err) {
+                        // Ignoramos errores puntuales en una expansión para seguir con la siguiente candidata
+                    }
+                }
+
+                // Añadir a la tabla solo la GANADORA de ese juego
+                if (bestExpansion) {
+                    addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique);
+                } else {
+                    addTableRow(game.name, "Sin datos / Error", 0, 0, true);
                 }
             }
             
@@ -359,9 +373,6 @@
 
         } catch (error) {
             log(`Error Crítico: ${error.message}`, "error");
-            if (error.message.includes("401")) {
-                log("Verifica que tu token sea correcto.", "warn");
-            }
         } finally {
             els.btn.disabled = false;
         }
