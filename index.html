@@ -58,13 +58,6 @@
             border-radius: 4px;
         }
 
-        .toggle-container {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
         button {
             background-color: var(--primary-color);
             color: #000;
@@ -74,7 +67,7 @@
             cursor: pointer;
             font-weight: bold;
             transition: opacity 0.2s;
-            margin-top: 10px;
+            margin-top: 24px; /* Alinear con los inputs */
             width: 100%;
         }
 
@@ -124,15 +117,19 @@
             border-bottom: 1px solid var(--border-color);
         }
 
-        th { background-color: #252525; color: var(--primary-color); }
+        th { 
+            background-color: #252525; 
+            color: var(--primary-color); 
+            cursor: pointer; /* Indicador visual de que se puede ordenar */
+            user-select: none;
+        }
+        
+        th:hover { background-color: #333; }
+
         tr:hover { background-color: #2a2a2a; }
         
-        .quantity-badge {
-            background-color: #333;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-weight: bold;
-        }
+        .metric-main { display: block; font-size: 1.1em; font-weight: bold; }
+        .metric-sub { display: block; font-size: 0.8em; color: #888; }
         
         .high-supply { color: var(--secondary-color); }
         .low-supply { color: var(--error-color); }
@@ -153,21 +150,18 @@
         </div>
 
         <div class="form-group">
-            <label for="nthExpansion">Regla de Antigüedad</label>
+            <label for="nthExpansion">Rango de Sets (Recientes)</label>
             <input type="number" id="nthExpansion" value="3" min="1">
-            <small style="color: #777; margin-top:5px;">Analizar la Nª expansión más reciente (ej: 3 = evitar hype actual).</small>
+            <small style="color: #777; margin-top:5px;">Analizar los X últimos sets (evitar solo el último).</small>
         </div>
 
         <div class="form-group">
-            <label>Opciones de Red</label>
-            <div class="toggle-container">
-                <input type="checkbox" id="useProxy" checked>
-                <label for="useProxy">Usar Proxy CORS (cors-anywhere)</label>
-            </div>
-            <small style="color: #777;">Necesario si no tienes un backend propio.</small>
+            <label for="minCards">Mínimo de Cartas (Filtro)</label>
+            <input type="number" id="minCards" value="120" min="10">
+            <small style="color: #777; margin-top:5px;">Ignorar sets con menos de X cartas (evita promos/demos).</small>
         </div>
 
-        <div class="form-group" style="justify-content: flex-end;">
+        <div class="form-group">
             <button id="btnAnalyze" onclick="startAnalysis()">Iniciar Análisis</button>
         </div>
     </div>
@@ -180,10 +174,10 @@
     <table id="resultsTable">
         <thead>
             <tr>
-                <th>Juego</th>
-                <th>Expansión Analizada</th>
-                <th>Oferta Total (Top 25)</th>
-                <th>Estado</th>
+                <th onclick="sortTable(0)">Juego ↕</th>
+                <th onclick="sortTable(1)">Expansión Analizada ↕</th>
+                <th onclick="sortTable(2)" title="Click para ordenar">Oferta Total (Promedio) ↕</th>
+                <th onclick="sortTable(3)">Estado ↕</th>
             </tr>
         </thead>
         <tbody>
@@ -193,17 +187,17 @@
 
 <script>
     // Configuración base
-    const BASE_URL = 'https://api.cardtrader.com/api/v2'; // [cite: 5]
-    const PROXY_URL = 'https://cors-anywhere.herokuapp.com/'; 
+    const BASE_URL = 'https://api.cardtrader.com/api/v2';
     
     // Referencias DOM
     const els = {
         token: document.getElementById('apiToken'),
         nth: document.getElementById('nthExpansion'),
-        proxy: document.getElementById('useProxy'),
+        minCards: document.getElementById('minCards'),
         btn: document.getElementById('btnAnalyze'),
         logs: document.getElementById('logContainer'),
         progress: document.getElementById('progressBar'),
+        table: document.getElementById('resultsTable'),
         tableBody: document.querySelector('#resultsTable tbody')
     };
 
@@ -222,20 +216,17 @@
         els.logs.scrollTop = els.logs.scrollHeight;
     }
 
-    // Función de espera para evitar Rate Limits
-    // [cite: 12] La API limita a 200 requests/10s.
-    //  Marketplace limita a 10 requests/1s.
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Wrapper seguro para Fetch
-    async function fetchAPI(endpoint, token, useProxy) {
-        const url = useProxy ? PROXY_URL + BASE_URL + endpoint : BASE_URL + endpoint;
+    // Wrapper seguro para Fetch (SIN PROXY)
+    async function fetchAPI(endpoint, token) {
+        const url = BASE_URL + endpoint;
         
         try {
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${token}`, // 
+                    'Authorization': `Bearer ${token}`, 
                     'Accept': 'application/json'
                 }
             });
@@ -243,7 +234,7 @@
             if (response.status === 429) {
                 log("Rate Limit alcanzado. Esperando 5 segundos...", "warn");
                 await sleep(5000);
-                return fetchAPI(endpoint, token, useProxy); // Retry
+                return fetchAPI(endpoint, token); // Retry
             }
 
             if (!response.ok) {
@@ -258,15 +249,13 @@
     }
 
     // Lógica Principal
-    // Lógica Principal
     async function startAnalysis() {
         const token = els.token.value.trim();
-        const useProxy = els.proxy.checked;
         const nRule = parseInt(els.nth.value) || 3;
+        const minCardsRule = parseInt(els.minCards.value) || 100;
 
         if (!token) return log("Error: Debes introducir un API Token.", "error");
         
-        // Guardar token y resetear UI
         localStorage.setItem('ct_api_token', token);
         els.btn.disabled = true;
         els.tableBody.innerHTML = '';
@@ -277,20 +266,15 @@
 
         try {
             log("Obteniendo lista de juegos...", "info");
-            const gamesResponse = await fetchAPI('/games', token, useProxy);
-            
-            // SEGURIDAD: Usamos .array si existe (tu corrección), si no, usamos la respuesta directa
-            // por si la API o el Proxy cambian de comportamiento.
+            const gamesResponse = await fetchAPI('/games', token);
             const games = gamesResponse.array || gamesResponse; 
             
-            if (!Array.isArray(games)) {
-                throw new Error("La respuesta de /games no es una lista válida.");
-            }
+            if (!Array.isArray(games)) throw new Error("La respuesta de /games no es una lista válida.");
 
             log(`Se encontraron ${games.length} juegos.`, "success");
 
-            log("Descargando base de datos de expansiones (esto puede tardar)...", "info");
-            const allExpansions = await fetchAPI('/expansions', token, useProxy);
+            log("Descargando base de datos de expansiones...", "info");
+            const allExpansions = await fetchAPI('/expansions', token);
             log(`Descargadas ${allExpansions.length} expansiones. Procesando...`, "success");
 
             const expansionsByGame = {};
@@ -299,7 +283,7 @@
                 expansionsByGame[exp.game_id].push(exp);
             });
 
-            // 3. BUCLE DE ANÁLISIS
+            // --- BUCLE DE ANÁLISIS ---
             let processedCount = 0;
             const totalToProcess = games.length;
 
@@ -309,43 +293,56 @@
 
                 const gameExpansions = expansionsByGame[game.id] || [];
                 
-                if (gameExpansions.length === 0) {
-                    continue; // Saltamos silenciosamente si no hay expansiones para no ensuciar el log
-                }
+                if (gameExpansions.length === 0) continue;
 
-                // Ordenar por ID descendente (más nuevo primero)
+                // Ordenar: más nuevo primero
                 gameExpansions.sort((a, b) => b.id - a.id);
 
-                // --- LÓGICA DE "MEJOR CANDIDATO" ---
-                // Cogemos las N últimas expansiones (ej: las 3 últimas)
-                const candidates = gameExpansions.slice(0, nRule);
+                // Cogemos más candidatos de los necesarios por si filtramos muchos sets pequeños
+                const searchDepth = nRule + 3; 
+                const candidates = gameExpansions.slice(0, searchDepth);
                 
-                log(`Analizando ${game.name}: Comparando sus últimas ${candidates.length} expansiones...`, "info");
+                log(`Analizando ${game.name}...`, "info");
 
                 let bestExpansion = null;
                 let maxAverageSupply = -1;
 
-                // Revisamos CADA UNA de las candidatas para encontrar la mejor
+                // Iteramos candidatos hasta encontrar el mejor que cumpla las normas
+                let checkedCount = 0;
+
                 for (const exp of candidates) {
+                    // Respetamos la regla de "Mirar solo los X últimos". 
+                    // Si ya hemos mirado los N indicados, paramos.
+                    if (checkedCount >= nRule) break;
+                    
                     try {
                         await sleep(250); 
-
-                        const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${exp.id}`, token, useProxy);
-                        log(`Ànalizando ${exp.id}...`, "info");
+                        const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${exp.id}`, token);
+                        
                         let currentSupply = 0;
                         let uniqueBlueprints = 0;
 
+                        // Contar stock y cartas únicas
                         Object.values(productsMap).forEach(productList => {
-                            uniqueBlueprints++;
+                            if (productList.length > 0) uniqueBlueprints++; // Solo cuenta si tiene algún producto listado
                             productList.forEach(product => {
                                 currentSupply += (product.quantity || 0);
                             });
                         });
+
+                        // --- FILTRO DE MÍNIMO DE CARTAS ---
+                        if (uniqueBlueprints < minCardsRule) {
+                            log(`Skipping ${exp.name} (ID: ${exp.id}): Solo tiene ${uniqueBlueprints} cartas (Min: ${minCardsRule})`, "warn");
+                            continue; // Saltamos este set y pasamos al siguiente candidato
+                        }
+
+                        // Si pasa el filtro, cuenta como una de las "N" expansiones revisadas
+                        checkedCount++;
+
                         const avgSupply = uniqueBlueprints > 0 ? (currentSupply / uniqueBlueprints) : 0;
-                        log(`Finalizado el analisis de ${exp.id} maxAverageSupply: ${maxAverageSupply}, currentSupply: ${currentSupply}...`, "info");
-                        // Si esta expansión tiene más mercado que la anterior, es la nueva ganadora
+                        log(`Set Válido: ${exp.name} - Avg: ${avgSupply.toFixed(2)}`, "info");
+
                         if (avgSupply > maxAverageSupply) {
-                            log("avgSupply > maxSupply cambiando la mejor expansion", "info");
                             maxAverageSupply = avgSupply;
                             bestExpansion = {
                                 name: exp.name,
@@ -356,63 +353,27 @@
                         }
 
                     } catch (err) {
-                        // Ignoramos errores puntuales en una expansión para seguir con la siguiente candidata
-                        log(err, "error");
+                        log(`Error leyendo expansión ${exp.id}: ${err.message}`, "error");
                     }
                 }
 
-                // Añadir a la tabla solo la GANADORA de ese juego
                 if (bestExpansion) {
-                    log(`bestExpansion of ${game.name} is name: ${bestExpansion.name}, supply: ${bestExpansion.supply}, unique: ${bestExpansion.unique}, average: ${bestExpansion.average}`, "info");
                     addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique, bestExpansion.average);
                 } else {
-                    log(`No bestExpansion for game ${game.name}`, "info");
-                    addTableRow(game.name, "Sin datos / Error", 0, 0, 0,true);
+                    addTableRow(game.name, `Sin sets válidos (> ${minCardsRule} cartas)`, 0, 0, 0, false, true);
                 }
             }
             
-            log("Análisis completado con éxito.", "success");
+            log("Análisis completado.", "success");
+            
+            // Ordenar tabla automáticamente al finalizar
+            sortTable(2); 
 
         } catch (error) {
             log(`Error Crítico: ${error.message}`, "error");
-          } finally {           els.btn.disabled = false;
+        } finally {          
+            els.btn.disabled = false;
         }
-      }    
-    function addTableRow(gameName, expansionName, supply, blueprintsCount, average, isError = false) {
-        const row = document.createElement('tr');
-        
-        let statusHtml = '';
-        let quantityDisplay = supply;
+    }    
 
-        if (isError) {
-            statusHtml = '<span class="log-error">Error API</span>';
-        } else {
-            const avg = parseFloat(average);
-            // Lógica simple de semáforo para la "Salud"
-            // Si hay muchas cartas (ej: > 500 en muestra) es un mercado activo.
-            // Si hay pocas, puede ser escasez o juego muerto.
-            if (avg > 10) {
-                statusHtml = '<span class="high-supply">🟢 Mercado Muy Líquido</span>';
-            } else if (avg > 3) {
-                statusHtml = '<span style="color: #ffb74d">🟡 Mercado Activo</span>';
-            } else {
-                statusHtml = '<span class="low-supply">🔴 Baja Oferta / Escaso</span>';
-            }
-            quantityDisplay = `
-                <span class="metric-main">${avg.toFixed(2)} copias/carta</span>
-                <span class="metric-sub">Total: ${supply} items en ${blueprintsCount} cartas</span>
-            `;
-        }
-
-        row.innerHTML = `
-            <td><strong>${gameName}</strong></td>
-            <td>${expansionName}</td>
-            <td>${quantityDisplay}</td>
-            <td>${statusHtml}</td>
-        `;
-        els.tableBody.appendChild(row);
-    }
-</script>
-
-</body>
-</html>
+    function addTableRow(gameName, expansionName, supply, blueprintsCount, average, isError
