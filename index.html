@@ -277,7 +277,7 @@
         try {
             // 1. OBTENER JUEGOS [cite: 54]
             log("Obteniendo lista de juegos...", "info");
-            const games = await fetchAPI('/games', token, useProxy);
+            const games = (await fetchAPI('/games', token, useProxy)).array;
             log(`Se encontraron ${games.length} juegos.`, "success");
 
             // 2. OBTENER TODAS LAS EXPANSIONES [cite: 97]
