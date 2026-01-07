@@ -375,7 +375,8 @@
             log(`Error Crítico: ${error.message}`, "error");
           } finally {           els.btn.disabled = false;
         }
-      }    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
+      }    
+    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
         const row = document.createElement('tr');
         
         let statusHtml = '';
