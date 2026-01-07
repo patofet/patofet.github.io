@@ -376,4 +376,85 @@
         }
     }    
 
-    function addTableRow(gameName, expansionName, supply, blueprintsCount, average, isError
+    function addTableRow(gameName, expansionName, supply, blueprintsCount, average, isError = false, isWarn = false) {
+        const row = document.createElement('tr');
+        
+        let statusHtml = '';
+        let quantityDisplay = supply;
+        const avg = parseFloat(average);
+
+        if (isError) {
+            statusHtml = '<span class="log-error">Error API</span>';
+        } else if (isWarn) {
+            statusHtml = '<span class="log-warn">Sin datos suficientes</span>';
+        } else {
+            if (avg > 10) statusHtml = '<span class="high-supply">🟢 Mercado Muy Líquido</span>';
+            else if (avg > 3) statusHtml = '<span style="color: #ffb74d">🟡 Mercado Activo</span>';
+            else statusHtml = '<span class="low-supply">🔴 Baja Oferta / Escaso</span>';
+            
+            quantityDisplay = `
+                <span class="metric-main">${avg.toFixed(2)} copias/carta</span>
+                <span class="metric-sub">Total: ${supply} items en ${blueprintsCount} cartas</span>
+            `;
+        }
+
+        // Guardamos el valor numérico en un data-attribute para poder ordenar fácilmente
+        row.innerHTML = `
+            <td><strong>${gameName}</strong></td>
+            <td>${expansionName}</td>
+            <td data-val="${avg}">${quantityDisplay}</td>
+            <td>${statusHtml}</td>
+        `;
+        els.tableBody.appendChild(row);
+    }
+
+    // Función de ordenación de tabla
+    function sortTable(n) {
+        const table = document.getElementById("resultsTable");
+        let rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+        switching = true;
+        dir = "desc"; // Orden descendente por defecto para ver los más altos primero
+
+        while (switching) {
+            switching = false;
+            rows = table.rows;
+            
+            // Bucle a través de las filas (saltando el header)
+            for (i = 1; i < (rows.length - 1); i++) {
+                shouldSwitch = false;
+                x = rows[i].getElementsByTagName("TD")[n];
+                y = rows[i + 1].getElementsByTagName("TD")[n];
+
+                let xVal, yVal;
+
+                // Si ordenamos por la columna 2 (Promedio), usamos el atributo data-val
+                if (n === 2) {
+                    xVal = parseFloat(x.getAttribute("data-val")) || 0;
+                    yVal = parseFloat(y.getAttribute("data-val")) || 0;
+                } else {
+                    xVal = x.innerHTML.toLowerCase();
+                    yVal = y.innerHTML.toLowerCase();
+                }
+
+                if (dir == "asc") {
+                    if (xVal > yVal) { shouldSwitch = true; break; }
+                } else if (dir == "desc") {
+                    if (xVal < yVal) { shouldSwitch = true; break; }
+                }
+            }
+            if (shouldSwitch) {
+                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                switching = true;
+                switchcount ++;
+            } else {
+                if (switchcount == 0 && dir == "desc") {
+                    dir = "asc";
+                    switching = true;
+                }
+            }
+        }
+    }
+</script>
+
+</body>
+</html>
