@@ -323,7 +323,7 @@
                 log(`Analizando ${game.name}: Comparando sus últimas ${candidates.length} expansiones...`, "info");
 
                 let bestExpansion = null;
-                let maxSupply = -1;
+                let maxAverageSupply = -1;
 
                 // Revisamos CADA UNA de las candidatas para encontrar la mejor
                 for (const exp of candidates) {
@@ -341,16 +341,17 @@
                                 currentSupply += (product.quantity || 0);
                             });
                         });
-
+                        const avgSupply = uniqueBlueprints > 0 ? (currentSupply / uniqueBlueprints) : 0;
                         log(`Finalizado el analisis de ${exp.id} maxSupply: ${maxSupply}, currentSupply: ${currentSupply}...`, "info");
                         // Si esta expansión tiene más mercado que la anterior, es la nueva ganadora
-                        if (currentSupply > maxSupply) {
+                        if (avgSupply > maxAverageSupply) {
                             log("currentSupply > maxSupply cambiando la mejor expansion", "info");
                             maxSupply = currentSupply;
                             bestExpansion = {
                                 name: exp.name,
                                 supply: currentSupply,
-                                unique: uniqueBlueprints
+                                unique: uniqueBlueprints,
+                                average: avgSupply
                             };
                         }
 
@@ -362,8 +363,8 @@
 
                 // Añadir a la tabla solo la GANADORA de ese juego
                 if (bestExpansion) {
-                    log(`bestExpansion of ${game.name} is name: ${bestExpansion.name}, supply: ${bestExpansion.supply}, unique: ${bestExpansion.unique}`, "info");
-                    addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique);
+                    log(`bestExpansion of ${game.name} is name: ${bestExpansion.name}, supply: ${bestExpansion.supply}, unique: ${bestExpansion.unique}, average: ${bestExpansion.average}`, "info");
+                    addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique, bestExpansion.average);
                 } else {
                     log(`No bestExpansion for game ${game.name}`, "info");
                     addTableRow(game.name, "Sin datos / Error", 0, 0, true);
@@ -377,7 +378,7 @@
           } finally {           els.btn.disabled = false;
         }
       }    
-    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
+    function addTableRow(gameName, expansionName, supply, blueprintsCount, average, isError = false) {
         const row = document.createElement('tr');
         
         let statusHtml = '';
@@ -396,7 +397,10 @@
             } else {
                 statusHtml = '<span class="low-supply">🔴 Baja Oferta / Escaso</span>';
             }
-            quantityDisplay = `${supply} items <small>(${blueprintsCount} cartas únicas)</small>`;
+            quantityDisplay = `
+                <span class="metric-main">${avg.toFixed(2)} copias/carta</span>
+                <span class="metric-sub">Total: ${supply} items en ${blueprintsCount} cartas</span>
+            `;
         }
 
         row.innerHTML = `
