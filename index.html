@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizador de Salud de Mercado TCG - CardTrader</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --primary-color: #bb86fc;
+            --secondary-color: #03dac6;
+            --text-color: #e0e0e0;
+            --error-color: #cf6679;
+            --border-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 { color: var(--primary-color); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        h2 { font-size: 1.2rem; margin-top: 0; }
+
+        /* Panel de Configuración */
+        .config-panel {
+            background-color: var(--surface-color);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label { margin-bottom: 5px; font-weight: bold; font-size: 0.9rem; }
+        input[type="text"], input[type="number"], select {
+            background-color: #2c2c2c;
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.2s;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        button:hover { opacity: 0.9; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+
+        /* Logs y Progreso */
+        .status-panel {
+            background-color: #000;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            height: 150px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+            font-size: 0.85rem;
+        }
+
+        .log-entry { margin: 2px 0; }
+        .log-info { color: #888; }
+        .log-success { color: var(--secondary-color); }
+        .log-error { color: var(--error-color); }
+        .log-warn { color: #ffb74d; }
+
+        progress {
+            width: 100%;
+            height: 10px;
+            margin-bottom: 10px;
+            appearance: none;
+        }
+        progress::-webkit-progress-bar { background-color: #333; border-radius: 5px; }
+        progress::-webkit-progress-value { background-color: var(--secondary-color); border-radius: 5px; }
+
+        /* Tabla de Resultados */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: var(--surface-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th { background-color: #252525; color: var(--primary-color); }
+        tr:hover { background-color: #2a2a2a; }
+        
+        .quantity-badge {
+            background-color: #333;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+        }
+        
+        .high-supply { color: var(--secondary-color); }
+        .low-supply { color: var(--error-color); }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📊 Analizador de Salud de Mercado TCG</h1>
+    
+    <div class="config-panel">
+        <div class="form-group">
+            <label for="apiToken">API Token (CardTrader)</label>
+            <input type="password" id="apiToken" placeholder="Pega tu token aquí...">
+            <small style="color: #777; margin-top:5px;">El token se guarda localmente en tu navegador.</small>
+        </div>
+
+        <div class="form-group">
+            <label for="nthExpansion">Regla de Antigüedad</label>
+            <input type="number" id="nthExpansion" value="3" min="1">
+            <small style="color: #777; margin-top:5px;">Analizar la Nª expansión más reciente (ej: 3 = evitar hype actual).</small>
+        </div>
+
+        <div class="form-group">
+            <label>Opciones de Red</label>
+            <div class="toggle-container">
+                <input type="checkbox" id="useProxy" checked>
+                <label for="useProxy">Usar Proxy CORS (cors-anywhere)</label>
+            </div>
+            <small style="color: #777;">Necesario si no tienes un backend propio.</small>
+        </div>
+
+        <div class="form-group" style="justify-content: flex-end;">
+            <button id="btnAnalyze" onclick="startAnalysis()">Iniciar Análisis</button>
+        </div>
+    </div>
+
+    <progress id="progressBar" value="0" max="100"></progress>
+    <div id="logContainer" class="status-panel">
+        <div class="log-entry log-info">> Esperando inicio...</div>
+    </div>
+
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>Juego</th>
+                <th>Expansión Analizada</th>
+                <th>Oferta Total (Top 25)</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            </tbody>
+    </table>
+</div>
+
+<script>
+    // Configuración base
+    const BASE_URL = 'https://api.cardtrader.com/api/v2'; // [cite: 5]
+    const PROXY_URL = 'https://cors-anywhere.herokuapp.com/'; 
+    
+    // Referencias DOM
+    const els = {
+        token: document.getElementById('apiToken'),
+        nth: document.getElementById('nthExpansion'),
+        proxy: document.getElementById('useProxy'),
+        btn: document.getElementById('btnAnalyze'),
+        logs: document.getElementById('logContainer'),
+        progress: document.getElementById('progressBar'),
+        tableBody: document.querySelector('#resultsTable tbody')
+    };
+
+    // Cargar token guardado
+    window.onload = () => {
+        const savedToken = localStorage.getItem('ct_api_token');
+        if (savedToken) els.token.value = savedToken;
+    };
+
+    // Utilidades de Logging
+    function log(msg, type = 'info') {
+        const div = document.createElement('div');
+        div.className = `log-entry log-${type}`;
+        div.textContent = `> ${msg}`;
+        els.logs.appendChild(div);
+        els.logs.scrollTop = els.logs.scrollHeight;
+    }
+
+    // Función de espera para evitar Rate Limits
+    // [cite: 12] La API limita a 200 requests/10s.
+    //  Marketplace limita a 10 requests/1s.
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Wrapper seguro para Fetch
+    async function fetchAPI(endpoint, token, useProxy) {
+        const url = useProxy ? PROXY_URL + BASE_URL + endpoint : BASE_URL + endpoint;
+        
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`, // 
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.status === 429) {
+                log("Rate Limit alcanzado. Esperando 5 segundos...", "warn");
+                await sleep(5000);
+                return fetchAPI(endpoint, token, useProxy); // Retry
+            }
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Error ${response.status}: ${errText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    // Lógica Principal
+    async function startAnalysis() {
+        const token = els.token.value.trim();
+        const useProxy = els.proxy.checked;
+        const nRule = parseInt(els.nth.value) || 3;
+
+        if (!token) return log("Error: Debes introducir un API Token.", "error");
+        
+        // Guardar token y resetear UI
+        localStorage.setItem('ct_api_token', token);
+        els.btn.disabled = true;
+        els.tableBody.innerHTML = '';
+        els.logs.innerHTML = '';
+        els.progress.value = 0;
+        
+        log("Iniciando análisis...", "info");
+
+        try {
+            // 1. OBTENER JUEGOS [cite: 54]
+            log("Obteniendo lista de juegos...", "info");
+            const games = await fetchAPI('/games', token, useProxy);
+            log(`Se encontraron ${games.length} juegos.`, "success");
+
+            // 2. OBTENER TODAS LAS EXPANSIONES [cite: 97]
+            // Nota: La API no documenta un filtro de expansiones por game_id en el endpoint principal,
+            // por lo que descargamos la lista (puede ser pesada) y filtramos en cliente para asegurar precisión.
+            log("Descargando base de datos de expansiones (esto puede tardar)...", "info");
+            const allExpansions = await fetchAPI('/expansions', token, useProxy);
+            log(`Descargadas ${allExpansions.length} expansiones. Procesando...`, "success");
+
+            // Agrupar expansiones por juego para acceso rápido
+            const expansionsByGame = {};
+            allExpansions.forEach(exp => {
+                if (!expansionsByGame[exp.game_id]) expansionsByGame[exp.game_id] = [];
+                expansionsByGame[exp.game_id].push(exp);
+            });
+
+            // 3. BUCLE DE ANÁLISIS
+            let processedCount = 0;
+            const totalToProcess = games.length;
+
+            for (const game of games) {
+                // Actualizar UI
+                processedCount++;
+                els.progress.value = (processedCount / totalToProcess) * 100;
+
+                const gameExpansions = expansionsByGame[game.id] || [];
+                
+                if (gameExpansions.length === 0) {
+                    log(`Saltando ${game.name}: Sin expansiones.`, "warn");
+                    continue;
+                }
+
+                // "Regla del Hype": Ordenar por ID descendente (asumiendo ID mayor = más nuevo)
+                // [cite: 106] El objeto Expansion tiene un ID numérico.
+                gameExpansions.sort((a, b) => b.id - a.id);
+
+                // Seleccionar la N-ésima expansión
+                // Si piden la 3ra y solo hay 2, cogemos la última disponible (la más antigua de las nuevas).
+                const selectedIndex = Math.min(nRule - 1, gameExpansions.length - 1);
+                const targetExpansion = gameExpansions[selectedIndex];
+
+                log(`Analizando ${game.name} -> Expansión: ${targetExpansion.name} (ID: ${targetExpansion.id})...`, "info");
+
+                // 4. MUESTREO DE MERCADO [cite: 186]
+                // Endpoint: GET /marketplace/products?expansion_id=...
+                // Rate Limit: 10 requests per second 
+                
+                try {
+                    await sleep(250); // Pausa de seguridad para respetar rate limits (4 req/s aprox)
+
+                    const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${targetExpansion.id}`, token, useProxy);
+                    
+                    // Calcular "Salud" (Supply Depth)
+                    //  La respuesta es un Objeto: { "blueprint_id": [Array de Productos...], ... }
+                    //  Cada producto tiene una propiedad "quantity".
+                    
+                    let totalSupply = 0;
+                    let uniqueBlueprints = 0;
+
+                    // Iterar sobre los keys (Blueprints)
+                    Object.values(productsMap).forEach(productList => {
+                        uniqueBlueprints++;
+                        // Iterar sobre los productos listados para ese blueprint (top 25 cheapest)
+                        productList.forEach(product => {
+                            totalSupply += (product.quantity || 0);
+                        });
+                    });
+
+                    // Añadir a la tabla
+                    addTableRow(game.name, targetExpansion.name, totalSupply, uniqueBlueprints);
+
+                } catch (marketError) {
+                    log(`Error obteniendo mercado para ${game.name}: ${marketError.message}`, "error");
+                    addTableRow(game.name, targetExpansion.name, "Error", 0, true);
+                }
+            }
+            
+            log("Análisis completado con éxito.", "success");
+
+        } catch (error) {
+            log(`Error Crítico: ${error.message}`, "error");
+            if (error.message.includes("401")) {
+                log("Verifica que tu token sea correcto.", "warn");
+            }
+        } finally {
+            els.btn.disabled = false;
+        }
+    }
+
+    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
+        const row = document.createElement('tr');
+        
+        let statusHtml = '';
+        let quantityDisplay = supply;
+
+        if (isError) {
+            statusHtml = '<span class="log-error">Error API</span>';
+        } else {
+            // Lógica simple de semáforo para la "Salud"
+            // Si hay muchas cartas (ej: > 500 en muestra) es un mercado activo.
+            // Si hay pocas, puede ser escasez o juego muerto.
+            if (supply > 1000) {
+                statusHtml = '<span class="high-supply">🟢 Mercado Muy Líquido</span>';
+            } else if (supply > 200) {
+                statusHtml = '<span style="color: #ffb74d">🟡 Mercado Activo</span>';
+            } else {
+                statusHtml = '<span class="low-supply">🔴 Baja Oferta / Escaso</span>';
+            }
+            quantityDisplay = `${supply} items <small>(${blueprintsCount} cartas únicas)</small>`;
+        }
+
+        row.innerHTML = `
+            <td><strong>${gameName}</strong></td>
+            <td>${expansionName}</td>
+            <td>${quantityDisplay}</td>
+            <td>${statusHtml}</td>
+        `;
+        els.tableBody.appendChild(row);
+    }
+</script>
+
+</body>
+</html>
