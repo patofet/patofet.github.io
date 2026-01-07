@@ -342,11 +342,11 @@
                             });
                         });
                         const avgSupply = uniqueBlueprints > 0 ? (currentSupply / uniqueBlueprints) : 0;
-                        log(`Finalizado el analisis de ${exp.id} maxSupply: ${maxSupply}, currentSupply: ${currentSupply}...`, "info");
+                        log(`Finalizado el analisis de ${exp.id} maxAverageSupply: ${maxAverageSupply}, currentSupply: ${currentSupply}...`, "info");
                         // Si esta expansión tiene más mercado que la anterior, es la nueva ganadora
                         if (avgSupply > maxAverageSupply) {
-                            log("currentSupply > maxSupply cambiando la mejor expansion", "info");
-                            maxSupply = currentSupply;
+                            log("avgSupply > maxSupply cambiando la mejor expansion", "info");
+                            maxAverageSupply = avgSupply;
                             bestExpansion = {
                                 name: exp.name,
                                 supply: currentSupply,
