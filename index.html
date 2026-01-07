@@ -276,7 +276,6 @@
         log("Iniciando análisis...", "info");
 
         try {
-            [cite_start]// 1. OBTENER JUEGOS [cite: 54]
             log("Obteniendo lista de juegos...", "info");
             const gamesResponse = await fetchAPI('/games', token, useProxy);
             
@@ -290,7 +289,6 @@
 
             log(`Se encontraron ${games.length} juegos.`, "success");
 
-            [cite_start]// 2. OBTENER TODAS LAS EXPANSIONES [cite: 97]
             log("Descargando base de datos de expansiones (esto puede tardar)...", "info");
             const allExpansions = await fetchAPI('/expansions', token, useProxy);
             log(`Descargadas ${allExpansions.length} expansiones. Procesando...`, "success");
@@ -330,7 +328,6 @@
                 // Revisamos CADA UNA de las candidatas para encontrar la mejor
                 for (const exp of candidates) {
                     try {
-                        [cite_start]// Respetar Rate Limits [cite: 198]
                         await sleep(250); 
 
                         const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${exp.id}`, token, useProxy);
