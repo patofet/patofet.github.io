@@ -338,7 +338,6 @@
                         Object.values(productsMap).forEach(productList => {
                             uniqueBlueprints++;
                             productList.forEach(product => {
-                                totalSupply += (product.quantity || 0); // Corrección: variable local
                                 currentSupply += (product.quantity || 0);
                             });
                         });
