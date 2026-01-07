@@ -331,7 +331,7 @@
                         await sleep(250); 
 
                         const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${exp.id}`, token, useProxy);
-                        
+                        log(`Ànalizando ${exp.id}...`, "info");
                         let currentSupply = 0;
                         let uniqueBlueprints = 0;
 
@@ -343,8 +343,10 @@
                             });
                         });
 
+                        log(`Finalizado el analisis de ${exp.id} maxSupply: ${maxSupply} totalSupply: ${totalSupply}, currentSupply: ${currentSupply}...`, "info");
                         // Si esta expansión tiene más mercado que la anterior, es la nueva ganadora
                         if (currentSupply > maxSupply) {
+                            log("currentSupply > maxSupply cambiando la mejor expansion", "info");
                             maxSupply = currentSupply;
                             bestExpansion = {
                                 name: exp.name,
@@ -359,6 +361,7 @@
                 }
 
                 // Añadir a la tabla solo la GANADORA de ese juego
+                log(`bestExpansion of ${game.name} is name: ${bestExpansion.name}, supply: ${bestExpansion.supply}, unique: ${bestExpansion.unique}`, "info");  
                 if (bestExpansion) {
                     addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique);
                 } else {
@@ -370,12 +373,9 @@
 
         } catch (error) {
             log(`Error Crítico: ${error.message}`, "error");
-        } finally {
-            els.btn.disabled = false;
+          } finally {           els.btn.disabled = false;
         }
-    }
-
-    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
+      }    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
         const row = document.createElement('tr');
         
         let statusHtml = '';
