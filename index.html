@@ -153,9 +153,9 @@
         </div>
 
         <div class="form-group">
-            <label for="nthExpansion">Rango de Análisis (X últimas)</label>
+            <label for="nthExpansion">Regla de Antigüedad</label>
             <input type="number" id="nthExpansion" value="3" min="1">
-            <small style="color: #777; margin-top:5px;">Analiza las X expansiones más recientes y muestra la mejor.</small>
+            <small style="color: #777; margin-top:5px;">Analizar la Nª expansión más reciente (ej: 3 = evitar hype actual).</small>
         </div>
 
         <div class="form-group">
@@ -181,7 +181,7 @@
         <thead>
             <tr>
                 <th>Juego</th>
-                <th>Mejor Expansión (del rango)</th>
+                <th>Expansión Analizada</th>
                 <th>Oferta Total (Top 25)</th>
                 <th>Estado</th>
             </tr>
@@ -193,7 +193,7 @@
 
 <script>
     // Configuración base
-    const BASE_URL = 'https://api.cardtrader.com/api/v2'; //
+    const BASE_URL = 'https://api.cardtrader.com/api/v2'; // [cite: 5]
     const PROXY_URL = 'https://cors-anywhere.herokuapp.com/'; 
     
     // Referencias DOM
@@ -223,8 +223,8 @@
     }
 
     // Función de espera para evitar Rate Limits
-    // La API limita a 200 requests/10s en general.
-    // Marketplace limita a 10 requests/1s.
+    // [cite: 12] La API limita a 200 requests/10s.
+    //  Marketplace limita a 10 requests/1s.
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     // Wrapper seguro para Fetch
@@ -235,7 +235,7 @@
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${token}`, //
+                    'Authorization': `Bearer ${token}`, // 
                     'Accept': 'application/json'
                 }
             });
@@ -275,20 +275,14 @@
         log("Iniciando análisis...", "info");
 
         try {
-            // 1. OBTENER JUEGOS
+            // 1. OBTENER JUEGOS [cite: 54]
             log("Obteniendo lista de juegos...", "info");
-            const gamesResponse = await fetchAPI('/games', token, useProxy);
-            
-            // CORRECCIÓN SOLICITADA: Acceder a .array si existe, sino usar la respuesta directa
-            const games = gamesResponse.array || gamesResponse; 
-            
-            if (!Array.isArray(games)) {
-                throw new Error("La respuesta de /games no contiene un array válido. Revisa la consola.");
-            }
-            
+            const games = (await fetchAPI('/games', token, useProxy)).array;
             log(`Se encontraron ${games.length} juegos.`, "success");
 
-            // 2. OBTENER TODAS LAS EXPANSIONES
+            // 2. OBTENER TODAS LAS EXPANSIONES [cite: 97]
+            // Nota: La API no documenta un filtro de expansiones por game_id en el endpoint principal,
+            // por lo que descargamos la lista (puede ser pesada) y filtramos en cliente para asegurar precisión.
             log("Descargando base de datos de expansiones (esto puede tardar)...", "info");
             const allExpansions = await fetchAPI('/expansions', token, useProxy);
             log(`Descargadas ${allExpansions.length} expansiones. Procesando...`, "success");
@@ -307,4 +301,103 @@
             for (const game of games) {
                 // Actualizar UI
                 processedCount++;
-                els.progress.value = (processedCount
+                els.progress.value = (processedCount / totalToProcess) * 100;
+
+                const gameExpansions = expansionsByGame[game.id] || [];
+                
+                if (gameExpansions.length === 0) {
+                    log(`Saltando ${game.name}: Sin expansiones.`, "warn");
+                    continue;
+                }
+
+                // "Regla del Hype": Ordenar por ID descendente (asumiendo ID mayor = más nuevo)
+                // [cite: 106] El objeto Expansion tiene un ID numérico.
+                gameExpansions.sort((a, b) => b.id - a.id);
+
+                // Seleccionar la N-ésima expansión
+                // Si piden la 3ra y solo hay 2, cogemos la última disponible (la más antigua de las nuevas).
+                const selectedIndex = Math.min(nRule - 1, gameExpansions.length - 1);
+                const targetExpansion = gameExpansions[selectedIndex];
+
+                log(`Analizando ${game.name} -> Expansión: ${targetExpansion.name} (ID: ${targetExpansion.id})...`, "info");
+
+                // 4. MUESTREO DE MERCADO [cite: 186]
+                // Endpoint: GET /marketplace/products?expansion_id=...
+                // Rate Limit: 10 requests per second 
+                
+                try {
+                    await sleep(250); // Pausa de seguridad para respetar rate limits (4 req/s aprox)
+
+                    const productsMap = await fetchAPI(`/marketplace/products?expansion_id=${targetExpansion.id}`, token, useProxy);
+                    
+                    // Calcular "Salud" (Supply Depth)
+                    //  La respuesta es un Objeto: { "blueprint_id": [Array de Productos...], ... }
+                    //  Cada producto tiene una propiedad "quantity".
+                    
+                    let totalSupply = 0;
+                    let uniqueBlueprints = 0;
+
+                    // Iterar sobre los keys (Blueprints)
+                    Object.values(productsMap).forEach(productList => {
+                        uniqueBlueprints++;
+                        // Iterar sobre los productos listados para ese blueprint (top 25 cheapest)
+                        productList.forEach(product => {
+                            totalSupply += (product.quantity || 0);
+                        });
+                    });
+
+                    // Añadir a la tabla
+                    addTableRow(game.name, targetExpansion.name, totalSupply, uniqueBlueprints);
+
+                } catch (marketError) {
+                    log(`Error obteniendo mercado para ${game.name}: ${marketError.message}`, "error");
+                    addTableRow(game.name, targetExpansion.name, "Error", 0, true);
+                }
+            }
+            
+            log("Análisis completado con éxito.", "success");
+
+        } catch (error) {
+            log(`Error Crítico: ${error.message}`, "error");
+            if (error.message.includes("401")) {
+                log("Verifica que tu token sea correcto.", "warn");
+            }
+        } finally {
+            els.btn.disabled = false;
+        }
+    }
+
+    function addTableRow(gameName, expansionName, supply, blueprintsCount, isError = false) {
+        const row = document.createElement('tr');
+        
+        let statusHtml = '';
+        let quantityDisplay = supply;
+
+        if (isError) {
+            statusHtml = '<span class="log-error">Error API</span>';
+        } else {
+            // Lógica simple de semáforo para la "Salud"
+            // Si hay muchas cartas (ej: > 500 en muestra) es un mercado activo.
+            // Si hay pocas, puede ser escasez o juego muerto.
+            if (supply > 1000) {
+                statusHtml = '<span class="high-supply">🟢 Mercado Muy Líquido</span>';
+            } else if (supply > 200) {
+                statusHtml = '<span style="color: #ffb74d">🟡 Mercado Activo</span>';
+            } else {
+                statusHtml = '<span class="low-supply">🔴 Baja Oferta / Escaso</span>';
+            }
+            quantityDisplay = `${supply} items <small>(${blueprintsCount} cartas únicas)</small>`;
+        }
+
+        row.innerHTML = `
+            <td><strong>${gameName}</strong></td>
+            <td>${expansionName}</td>
+            <td>${quantityDisplay}</td>
+            <td>${statusHtml}</td>
+        `;
+        els.tableBody.appendChild(row);
+    }
+</script>
+
+</body>
+</html>
