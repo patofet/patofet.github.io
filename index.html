@@ -367,7 +367,7 @@
                     addTableRow(game.name, bestExpansion.name, bestExpansion.supply, bestExpansion.unique, bestExpansion.average);
                 } else {
                     log(`No bestExpansion for game ${game.name}`, "info");
-                    addTableRow(game.name, "Sin datos / Error", 0, 0, true);
+                    addTableRow(game.name, "Sin datos / Error", 0, 0, 0,true);
                 }
             }
             
@@ -387,12 +387,13 @@
         if (isError) {
             statusHtml = '<span class="log-error">Error API</span>';
         } else {
+            const avg = parseFloat(average);
             // Lógica simple de semáforo para la "Salud"
             // Si hay muchas cartas (ej: > 500 en muestra) es un mercado activo.
             // Si hay pocas, puede ser escasez o juego muerto.
-            if (supply > 1000) {
+            if (avg > 10) {
                 statusHtml = '<span class="high-supply">🟢 Mercado Muy Líquido</span>';
-            } else if (supply > 200) {
+            } else if (avg > 3) {
                 statusHtml = '<span style="color: #ffb74d">🟡 Mercado Activo</span>';
             } else {
                 statusHtml = '<span class="low-supply">🔴 Baja Oferta / Escaso</span>';
